@@ -2,8 +2,19 @@ import UE = require('ue');
 import type { AlertColor } from './alerts';
 import { flarePng } from './flare-assets';
 const vector = (x: number, y: number): UE.Vector2D => UE.KismetMathLibrary.MakeVector2D(x, y);
+// A released PuerTS wrapper can throw while converting IsValid's argument,
+// before Unreal gets a chance to return false. Only that known lifetime error
+// is recoverable; missing/unsupported native bindings must remain visible.
+export function isReleasedObjectError(error: unknown): boolean {
+    return /passing (?:a|an) invalid object/i.test(String(error));
+}
+export function isLive<T extends UE.Object>(value: T | null | undefined): value is T {
+    if (!value) return false;
+    try { return UE.KismetSystemLibrary.IsValid(value); }
+    catch (error) { if (isReleasedObjectError(error)) return false; throw error; }
+}
 export function checked<T extends UE.Object>(value: UE.Object | null | undefined, cls: UE.$ClassType<T>): T {
-    if (!value || !UE.KismetSystemLibrary.IsValid(value) || !UE.GameplayStatics.ObjectIsA(value, cls.StaticClass())) {
+    if (!isLive(value) || !UE.GameplayStatics.ObjectIsA(value, cls.StaticClass())) {
         throw new Error(`Expected native ${cls.StaticClass().GetName()}`);
     }
     // The runtime class check above establishes this type.
@@ -68,11 +79,12 @@ export class AlertOverlay {
         } catch (error) { this.destroy(); throw error; }
     }
     get valid(): boolean {
-        return !!this.root && !!this.viewport && UE.KismetSystemLibrary.IsValid(this.root) &&
-            UE.KismetSystemLibrary.IsValid(this.viewport) && this.viewport.IsWidgetAdded(this.root);
+        try {
+            return isLive(this.root) && isLive(this.viewport) && this.viewport.IsWidgetAdded(this.root);
+        } catch (error) { if (isReleasedObjectError(error)) return false; throw error; }
     }
     hide(): void {
-        for (const glyph of this.glyphs) if (UE.KismetSystemLibrary.IsValid(glyph.root)) glyph.root.SetRenderOpacity(0);
+        for (const glyph of this.glyphs) if (isLive(glyph.root)) glyph.root.SetRenderOpacity(0);
     }
     describe(): string {
         if (!this.root) return 'no root';
@@ -89,7 +101,7 @@ export class AlertOverlay {
     }
     show(index: number, x: number, y: number, color: AlertColor, progress: number): void {
         const glyph = this.glyphs[index];
-        if (!glyph || !UE.KismetSystemLibrary.IsValid(glyph.root)) return;
+        if (!glyph || !isLive(glyph.root)) return;
         this.setColor(glyph,color);
         const t = Math.max(0, Math.min(1, progress));
         const gold = color === 'yellow';
@@ -111,7 +123,7 @@ export class AlertOverlay {
     }
     prepare(index: number, x: number, y: number, color: AlertColor, progress: number): void {
         const glyph=this.glyphs[index];
-        if(!glyph || !UE.KismetSystemLibrary.IsValid(glyph.root)) return;
+        if(!glyph || !isLive(glyph.root)) return;
         this.setColor(glyph,color);
         const t=Math.max(0,Math.min(1,progress));
         const gold=color==='yellow';
@@ -129,10 +141,17 @@ export class AlertOverlay {
         });
     }
     destroy(): void {
-        if (this.root && UE.KismetSystemLibrary.IsValid(this.root)) {
-            if (this.viewport && UE.KismetSystemLibrary.IsValid(this.viewport)) this.viewport.RemoveWidget(this.root);
-            else this.root.RemoveFromParent();
-        }
+        // Forget the old world first, even when native teardown has already run.
+        // Cleanup is idempotent and must never interrupt reset() or loader stop().
+        const root = this.root, viewport = this.viewport;
         this.glyphs = []; this.textures = []; this.root = undefined; this.viewport = undefined;
+        try {
+            if (isLive(root)) {
+                if (isLive(viewport)) viewport.RemoveWidget(root);
+                else root.RemoveFromParent();
+            }
+        } catch (error) {
+            if (!isReleasedObjectError(error)) console.error(`[PBZMOD] pbz-attack-alerts overlay cleanup: ${String(error)}`);
+        }
     }
 }

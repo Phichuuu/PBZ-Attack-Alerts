@@ -1,12 +1,32 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AlertOverlay = void 0;
+exports.isReleasedObjectError = isReleasedObjectError;
+exports.isLive = isLive;
 exports.checked = checked;
 const UE = require("ue");
 const flare_assets_1 = require("./flare-assets");
 const vector = (x, y) => UE.KismetMathLibrary.MakeVector2D(x, y);
+// A released PuerTS wrapper can throw while converting IsValid's argument,
+// before Unreal gets a chance to return false. Only that known lifetime error
+// is recoverable; missing/unsupported native bindings must remain visible.
+function isReleasedObjectError(error) {
+    return /passing (?:a|an) invalid object/i.test(String(error));
+}
+function isLive(value) {
+    if (!value)
+        return false;
+    try {
+        return UE.KismetSystemLibrary.IsValid(value);
+    }
+    catch (error) {
+        if (isReleasedObjectError(error))
+            return false;
+        throw error;
+    }
+}
 function checked(value, cls) {
-    if (!value || !UE.KismetSystemLibrary.IsValid(value) || !UE.GameplayStatics.ObjectIsA(value, cls.StaticClass())) {
+    if (!isLive(value) || !UE.GameplayStatics.ObjectIsA(value, cls.StaticClass())) {
         throw new Error(`Expected native ${cls.StaticClass().GetName()}`);
     }
     // The runtime class check above establishes this type.
@@ -82,12 +102,18 @@ class AlertOverlay {
         }
     }
     get valid() {
-        return !!this.root && !!this.viewport && UE.KismetSystemLibrary.IsValid(this.root) &&
-            UE.KismetSystemLibrary.IsValid(this.viewport) && this.viewport.IsWidgetAdded(this.root);
+        try {
+            return isLive(this.root) && isLive(this.viewport) && this.viewport.IsWidgetAdded(this.root);
+        }
+        catch (error) {
+            if (isReleasedObjectError(error))
+                return false;
+            throw error;
+        }
     }
     hide() {
         for (const glyph of this.glyphs)
-            if (UE.KismetSystemLibrary.IsValid(glyph.root))
+            if (isLive(glyph.root))
                 glyph.root.SetRenderOpacity(0);
     }
     describe() {
@@ -107,7 +133,7 @@ class AlertOverlay {
     }
     show(index, x, y, color, progress) {
         const glyph = this.glyphs[index];
-        if (!glyph || !UE.KismetSystemLibrary.IsValid(glyph.root))
+        if (!glyph || !isLive(glyph.root))
             return;
         this.setColor(glyph, color);
         const t = Math.max(0, Math.min(1, progress));
@@ -130,7 +156,7 @@ class AlertOverlay {
     }
     prepare(index, x, y, color, progress) {
         const glyph = this.glyphs[index];
-        if (!glyph || !UE.KismetSystemLibrary.IsValid(glyph.root))
+        if (!glyph || !isLive(glyph.root))
             return;
         this.setColor(glyph, color);
         const t = Math.max(0, Math.min(1, progress));
@@ -149,16 +175,25 @@ class AlertOverlay {
         });
     }
     destroy() {
-        if (this.root && UE.KismetSystemLibrary.IsValid(this.root)) {
-            if (this.viewport && UE.KismetSystemLibrary.IsValid(this.viewport))
-                this.viewport.RemoveWidget(this.root);
-            else
-                this.root.RemoveFromParent();
-        }
+        // Forget the old world first, even when native teardown has already run.
+        // Cleanup is idempotent and must never interrupt reset() or loader stop().
+        const root = this.root, viewport = this.viewport;
         this.glyphs = [];
         this.textures = [];
         this.root = undefined;
         this.viewport = undefined;
+        try {
+            if (isLive(root)) {
+                if (isLive(viewport))
+                    viewport.RemoveWidget(root);
+                else
+                    root.RemoveFromParent();
+            }
+        }
+        catch (error) {
+            if (!isReleasedObjectError(error))
+                console.error(`[PBZMOD] pbz-attack-alerts overlay cleanup: ${String(error)}`);
+        }
     }
 }
 exports.AlertOverlay = AlertOverlay;

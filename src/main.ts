@@ -3,7 +3,7 @@
 import UE = require('ue');
 import { argv, $ref, $unref } from 'puerts';
 import { AlertScheduler, Attack } from './alerts';
-import { AlertOverlay, checked } from './overlay';
+import { AlertOverlay, checked, isLive, isReleasedObjectError } from './overlay';
 import { settings } from './settings';
 import { CombatProbe } from './diagnostics';
 import { hitTimeStatus } from './observations';
@@ -16,6 +16,7 @@ const overlay = new AlertOverlay();
 let timer: ReturnType<typeof setInterval> | undefined;
 let world: UE.World | null | undefined;
 let player: UE.Pawn | null | undefined;
+let owner: UE.PlayerController | undefined;
 let component: UE.DeflectComponent | undefined;
 let nextAcquire = 0;
 let lastTime = -1;
@@ -33,23 +34,26 @@ let probe = new CombatProbe();
 let windup = new WindupTracker();
 let anchors = new BodyAnchors();
 const reported = new Set<string>();
+let nextTickAt = 0;
+let nextLifetimeReport = 0;
 function log(message: string): void { console.log(`${prefix} ${message}`); }
 function reset(): void {
-    scheduler.reset(); overlay.destroy(); component = undefined;
-    player = undefined; world = undefined; lastTime = -1;
+    scheduler.reset(); component = undefined;
+    player = undefined; world = undefined; owner = undefined; lastTime = -1;
     reported.clear(); nextAcquire = 0; nextReport = 0;
     nextUiAttempt = 0; uiFailures = 0; nextDataAttempt = 0; dataFailures = 0;
     selfCheckStarted = -1; selfCheckDone = false;
     probe = new CombatProbe();
     windup = new WindupTracker();
     anchors = new BodyAnchors();
+    overlay.destroy();
 }
 export function stop(): void {
     if (timer !== undefined) { clearInterval(timer); timer = undefined; }
     reset(); log('stopped; owned overlay removed');
 }
 function forceDodge(action: UE.LGAAction | null | undefined): boolean {
-    if (!action || !UE.KismetSystemLibrary.IsValid(action)) return false;
+    if (!isLive(action)) return false;
     let kind: UE.EDeflectBulletType | undefined;
     if (UE.GameplayStatics.ObjectIsA(action, UE.LGAAction_DurationBulletWithDeflectBase.StaticClass())) {
         kind = checked(action, UE.LGAAction_DurationBulletWithDeflectBase).DeflectBulletType;
@@ -60,25 +64,25 @@ function forceDodge(action: UE.LGAAction | null | undefined): boolean {
 }
 function tick(): void {
     const gi = argv.getByName('GameInstance');
-    if (!gi || !UE.KismetSystemLibrary.IsValid(gi)) { reset(); return; }
+    if (!isLive(gi)) { reset(); return; }
     const nextWorld = gi.GetWorld();
     const nextPlayer = UE.GameplayStatics.GetPlayerPawn(gi, 0);
-    if (!nextWorld || !nextPlayer || !UE.KismetSystemLibrary.IsValid(nextPlayer)) { reset(); return; }
-    if (nextWorld !== world || nextPlayer !== player) {
-        reset(); world = nextWorld; player = nextPlayer;
-        log(`world=${UE.GameplayStatics.GetCurrentLevelName(gi, true)} player=${player.GetName()}`);
-    }
+    if (!isLive(nextWorld) || !isLive(nextPlayer)) { reset(); return; }
+    const controller = UE.GameplayStatics.GetPlayerController(gi, 0);
+    if (!isLive(controller)) { reset(); return; }
     const now = UE.GameplayStatics.GetTimeSeconds(gi);
-    if (now < lastTime) scheduler.reset();
+    if (!Number.isFinite(now)) { reset(); return; }
+    if (nextWorld !== world || nextPlayer !== player || controller !== owner || now < lastTime) {
+        reset(); world = nextWorld; player = nextPlayer; owner = controller;
+        log(`world=${UE.GameplayStatics.GetCurrentLevelName(gi, true)} player=${player.GetName()} controller=${controller.GetName()}; lifecycle rebound`);
+    }
     lastTime = now;
     if (UE.GameplayStatics.IsGamePaused(gi)) { if (settings.combatProbe) probe.tick(gi, player, now); overlay.hide(); return; }
-    const controller = UE.GameplayStatics.GetPlayerController(gi, 0);
-    if (!controller || !UE.KismetSystemLibrary.IsValid(controller)) { overlay.hide(); return; }
-    if (!component || !UE.KismetSystemLibrary.IsValid(component)) {
+    if (!isLive(component)) {
         if (now < nextAcquire) return;
         nextAcquire = now + 1;
         const found = player.GetComponentByClass(UE.DeflectComponent.StaticClass());
-        if (!found) { if (now >= nextReport) { log('waiting for player DeflectComponent'); nextReport = now + 30; } return; }
+        if (!isLive(found)) { if (now >= nextReport) { log('waiting for player DeflectComponent'); nextReport = now + 30; } return; }
         component = checked(found, UE.DeflectComponent);
         log('bound player incoming-attack frames; combat coverage pending in-game validation');
     }
@@ -103,9 +107,9 @@ function tick(): void {
         const frame = frames.Get(id);
         if (!frame || frame.IsHit || !Number.isFinite(frame.HitGameTime)) continue;
         let source: UE.Actor | null | undefined;
-        if (frame.SourceAction && UE.KismetSystemLibrary.IsValid(frame.SourceAction)) source = frame.SourceAction.GetAvatarActor();
-        if ((!source || !UE.KismetSystemLibrary.IsValid(source)) && frame.Bullet && UE.KismetSystemLibrary.IsValid(frame.Bullet)) source = frame.Bullet.GetOwnerAvatar();
-        if (!source || !UE.KismetSystemLibrary.IsValid(source) || UE.KismetMathLibrary.EqualEqual_ObjectObject(source, player)) continue;
+        if (isLive(frame.SourceAction)) source = frame.SourceAction.GetAvatarActor();
+        if (!isLive(source) && isLive(frame.Bullet)) source = frame.Bullet.GetOwnerAvatar();
+        if (!isLive(source) || UE.KismetMathLibrary.EqualEqual_ObjectObject(source, player)) continue;
         const sourceKey = UE.KismetSystemLibrary.GetPathName(source);
         sources.set(sourceKey, source);
         const attack: Attack = { id, source: sourceKey, hitTime: frame.HitGameTime,
@@ -121,6 +125,7 @@ function tick(): void {
     }
     reported.clear(); keys.forEach(key => reported.add(key));
     } catch (error) {
+        if (isReleasedObjectError(error)) throw error;
         attacks.length = 0; sources.clear(); scheduler.reset();
         dataFailures++; nextDataAttempt = now + 5;
         console.error(`${prefix} attack-data attempt=${dataFailures}/3 ${String(error)}`);
@@ -130,12 +135,14 @@ function tick(): void {
     if (!overlay.valid && now >= nextUiAttempt && uiFailures < 3) {
         try {
             overlay.create(controller, settings.maxVisible, settings.size);
+            uiFailures = 0;
             log(`overlay attached with world owner=${controller.GetName()}`);
             if (settings.startupCheck && !selfCheckDone) {
                 selfCheckStarted = now + settings.startupDelaySeconds; selfCheckDone = true;
                 log(`visual self-check scheduled: lower-centre gold/red pulses after ${settings.startupDelaySeconds}s for ${settings.startupSeconds}s; unrelated to enemy attacks`);
             }
         } catch (error) {
+            if (isReleasedObjectError(error)) throw error;
             uiFailures++; nextUiAttempt = now + 2;
             console.error(`${prefix} overlay attempt=${uiFailures}/3 ${String(error)}; attack diagnostics continue`);
         }
@@ -163,7 +170,7 @@ function tick(): void {
     for (const flash of flashes) {
         if (slot >= settings.maxVisible) break;
         const source = sources.get(flash.source);
-        if (!source || !UE.KismetSystemLibrary.IsValid(source)) continue;
+        if (!isLive(source)) continue;
         const {x,y}=project(source);
         occupied.add(flash.source);
         overlay.show(slot++, x, y, flash.color, (now - flash.startedAt) / settings.flashSeconds);
@@ -171,7 +178,7 @@ function tick(): void {
     }
     for(const cue of preparations) {
         if(slot>=settings.maxVisible) break;
-        if(occupied.has(cue.sourceKey) || !UE.KismetSystemLibrary.IsValid(cue.source)) continue;
+        if(occupied.has(cue.sourceKey) || !isLive(cue.source)) continue;
         const {x,y}=project(cue.source);
         overlay.prepare(slot++,x,y,cue.color,cue.progress);
         windup.shown(cue.actionKey,now);
@@ -189,10 +196,22 @@ function tick(): void {
         if (phase < settings.flashSeconds) overlay.show(0, width / 2, height / 2, Math.floor(now / 2) % 2 ? 'red' : 'yellow', phase / settings.flashSeconds);
     }
 }
-log('0.2.3-experimental loaded; higher-contrast yellow at unchanged size; yellow=parry red=dodge; coverage incomplete');
+log('0.2.4-experimental loaded; map-travel lifecycle recovery; yellow=parry red=dodge; coverage incomplete');
 timer = setInterval(() => {
+    if (Date.now() < nextTickAt) return;
     try { tick(); }
     catch (error) {
+        if (isReleasedObjectError(error)) {
+            // Loading/GC can invalidate a wrapper between a check and its use.
+            // Discard all old-world state and wait in real time (game time may
+            // pause or rewind). Keep unknown API failures fail-closed below.
+            reset(); nextTickAt = Date.now() + 1000;
+            if (Date.now() >= nextLifetimeReport) {
+                log('released native object during transition; waiting to reacquire world/player/controller');
+                nextLifetimeReport = Date.now() + 30000;
+            }
+            return;
+        }
         console.error(`${prefix} ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
         // Fail closed on unsupported bindings; never retry an unsafe call every frame.
         stop();

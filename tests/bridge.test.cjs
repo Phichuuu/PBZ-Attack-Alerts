@@ -8,9 +8,15 @@ const vm = require('node:vm');
 // without appearing in Object.getOwnPropertyNames(require('ue')).
 function runtime({ rejectViewport = false } = {}) {
     const logs = [], callbacks = new Set(), instances = [], attached = new Set();
-    let player = null, now = 1;
-    const world = {}, gi = { GetWorld: () => world };
-    const controller = { GetWorld: () => world, GetName: () => 'controller' };
+    let player = null, now = 1, wallNow = 1000, readFailure, removeFailure;
+    let world = {}, controllerId = 0;
+    const released = new WeakSet();
+    const gi = { GetWorld: () => world };
+    const newController = () => {
+        const ownWorld = world, name = `controller-${++controllerId}`;
+        return { GetWorld: () => ownWorld, GetName: () => name };
+    };
+    let controller = newController();
     const natives = {};
     function make(cls, values = {}) { return { cls, GetName: () => cls.name, ...values }; }
     function register(name, factory = () => ({})) {
@@ -37,7 +43,10 @@ function runtime({ rejectViewport = false } = {}) {
             if (rejectViewport || !value.GetWorld()) return false;
             attached.add(value); return true;
         },
-        IsWidgetAdded: value => attached.has(value), RemoveWidget: value => attached.delete(value),
+        IsWidgetAdded: value => attached.has(value), RemoveWidget(value) {
+            attached.delete(value);
+            if (removeFailure) throw new Error(removeFailure);
+        },
     });
     Object.assign(natives, {
         SubsystemBlueprintLibrary: { GetEngineSubsystem: () => viewport },
@@ -45,11 +54,18 @@ function runtime({ rejectViewport = false } = {}) {
         NewObject: cls => natives[cls.name].factory(),
         BuiltinByte: 1, NewArray: () => ({ Add() {} }),
         KismetRenderingLibrary: { ImportBufferAsTexture2D: owner => natives.Texture2D.factory(owner) },
-        GameplayStatics: { GetPlayerPawn: () => player, GetCurrentLevelName: () => 'test',
+        GameplayStatics: { GetPlayerPawn: () => {
+                if (readFailure) { const error = readFailure; readFailure = undefined; throw new Error(error); }
+                return player;
+            }, GetCurrentLevelName: () => 'test',
             SpawnObject: (cls, outer) => natives[cls.name].factory(outer),
             GetTimeSeconds: () => now, IsGamePaused: () => false, GetPlayerController: () => controller,
             ObjectIsA: (value, cls) => value?.cls === cls },
-        KismetSystemLibrary: { IsValid: value => value != null, GetPathName: value => value.GetName() },
+        KismetSystemLibrary: { IsValid: value => {
+                // PuerTS can throw before IsValid reaches Unreal for a released wrapper.
+                if (value && released.has(value)) throw new Error('passing a invalid object');
+                return value != null;
+            }, GetPathName: value => value.GetName() },
         KismetMathLibrary: { MakeVector2D: (X, Y) => ({ X, Y }), MakeColor: (R, G, B, A) => ({ R, G, B, A }),
             EqualEqual_ObjectObject: (a, b) => a === b },
         WidgetLayoutLibrary: { GetViewportSize: () => ({ X: 1280, Y: 720 }), GetViewportScale: () => 1,
@@ -70,6 +86,7 @@ function runtime({ rejectViewport = false } = {}) {
         const context = { module: mod, exports: mod.exports,
             require: id => id === 'ue' ? bridge : id === 'puerts' ? puerts : load(id.replace(/^\.\//, '')),
             console: { log: line => logs.push(line), error: line => logs.push(line) },
+            Date: class extends Date { static now() { return wallNow; } },
             setInterval: callback => { callbacks.add(callback); return callback; }, clearInterval: handle => callbacks.delete(handle) };
         vm.runInNewContext(fs.readFileSync(file, 'utf8'), context, { filename: file });
         return mod.exports;
@@ -77,14 +94,25 @@ function runtime({ rejectViewport = false } = {}) {
     // This harness exercises rendering/receive frames; diagnostics have separate fixtures.
     load('settings').settings.combatProbe = false;
     load('settings').settings.earlyWindup = false;
-    return { load, logs, attached, callbacks, instances, controller,
-        advance: seconds => { now += seconds; },
+    return { load, logs, attached, callbacks, instances, get controller() { return controller; },
+        advance: seconds => { now += seconds; wallNow += seconds * 1000; },
+        setTime: seconds => { now = seconds; },
+        failNextRead: message => { readFailure = message; },
+        failRemoval: message => { removeFailure = message; },
+        setRejectViewport: value => { rejectViewport = value; },
+        replaceController: () => { controller = newController(); },
+        releaseWidgets: () => { instances.forEach(value => released.add(value)); attached.clear(); },
+        beginTravel() {
+            instances.forEach(value => released.add(value)); attached.clear();
+            player = null; controller = null; world = null;
+        },
         tick: () => [...callbacks].forEach(callback => callback()),
         enterCombat() {
+            if (!world) { world = {}; controller = newController(); now = 1; }
             const source = { GetName: () => 'enemy', K2_GetActorLocation: () => ({ X: 0, Y: 0, Z: 0 }) };
             const action = { GetAvatarActor: () => source, GetClass: () => ({ GetName: () => 'test-action' }) };
             // A sparse slot beyond Num() verifies the native TMap iteration path.
-            const frame = { SourceAction: action, HitGameTime: 1.2, IsDodge: false, IsHit: false };
+            const frame = { SourceAction: action, HitGameTime: now + .2, IsDodge: false, IsHit: false };
             const frames = { Num: () => 1, GetMaxIndex: () => 5, IsValidIndex: i => i === 4, GetKey: () => 9, Get: () => frame };
             const component = make(natives.DeflectComponent.StaticClass(), { ReceiveFrames: frames });
             player = { GetName: () => 'player', GetComponentByClass: () => component };
@@ -129,5 +157,71 @@ test('viewport rejection preserves attack diagnostics and stops after three UI a
     assert.equal(r.logs.filter(line => line.includes('overlay attempt=')).length, 3);
     assert.equal(r.callbacks.size, 1);
     assert.equal(r.attached.size, 0);
+    mod.stop();
+});
+
+test('released overlay wrappers cannot interrupt idempotent cleanup', () => {
+    const r = runtime(); const { AlertOverlay } = r.load('overlay'); const overlay = new AlertOverlay();
+    overlay.create(r.controller, 1, 154); r.releaseWidgets();
+    assert.equal(overlay.valid, false);
+    assert.doesNotThrow(() => overlay.destroy());
+    assert.equal(overlay.valid, false); assert.doesNotThrow(() => overlay.destroy());
+    overlay.create(r.controller, 1, 154); assert.equal(overlay.valid, true);
+    overlay.destroy();
+});
+
+test('native removal failure releases JS references and allows the next overlay', () => {
+    const r = runtime(); const { AlertOverlay } = r.load('overlay'); const overlay = new AlertOverlay();
+    overlay.create(r.controller, 1, 154); r.failRemoval('passing a invalid object');
+    assert.doesNotThrow(() => overlay.destroy()); assert.equal(overlay.valid, false);
+    r.failRemoval(undefined); overlay.create(r.controller, 1, 154); assert.equal(overlay.valid, true);
+    overlay.destroy();
+});
+
+test('map travel through released widgets and no pawn resumes visible attack alerts', () => {
+    const r = runtime(); r.enterCombat(); const mod = r.load('main'); r.tick();
+    assert.equal(r.logs.filter(line => line.includes('draw color=yellow')).length, 1);
+    for (let trip=0;trip<3;trip++) {
+        r.beginTravel(); assert.doesNotThrow(() => r.tick()); r.tick();
+        assert.equal(r.callbacks.size, 1, 'loading must not stop polling');
+        assert.equal(r.attached.size, 0);
+        r.enterCombat(); r.tick();
+        assert.equal(r.attached.size, 1);
+        assert.equal(r.logs.filter(line => line.includes('draw color=yellow')).length, trip+2);
+    }
+    mod.stop(); assert.equal(r.callbacks.size, 0);
+});
+
+test('a replaced controller rebuilds widgets even when world and pawn are unchanged', () => {
+    const r = runtime(); r.enterCombat(); const mod = r.load('main'); r.tick();
+    const old = [...r.attached][0]; r.replaceController(); r.tick();
+    assert.equal(r.attached.size, 1); const root = [...r.attached][0];
+    assert.notEqual(root, old); assert.equal(root.GetOuter(), r.controller);
+    mod.stop();
+});
+
+test('game-clock rewind clears lifecycle state and retries exhausted UI setup', () => {
+    const r = runtime({ rejectViewport: true }); r.enterCombat(); const mod = r.load('main');
+    for (let i=0;i<3;i++) { r.tick(); r.advance(2); }
+    assert.equal(r.attached.size, 0);
+    r.setRejectViewport(false); r.setTime(.1); r.tick();
+    assert.equal(r.attached.size, 1); mod.stop();
+});
+
+test('transient released-object errors back off and reacquire without stopping', () => {
+    const r = runtime(); r.enterCombat(); const mod = r.load('main'); r.tick();
+    r.failNextRead('passing a invalid object'); r.tick();
+    assert.equal(r.callbacks.size, 1); assert.equal(r.attached.size, 0);
+    r.tick(); assert.equal(r.attached.size, 0, 'must not retry a native failure every frame');
+    r.advance(1.1); r.enterCombat(); r.tick();
+    assert.equal(r.attached.size, 1);
+    assert.equal(r.logs.filter(line => line.includes('draw color=yellow')).length, 2);
+    mod.stop();
+});
+
+test('unknown binding failures still stop rather than repeatedly calling unsupported APIs', () => {
+    const r = runtime(); r.enterCombat(); const mod = r.load('main'); r.tick();
+    r.failNextRead('unsupported native binding'); r.tick();
+    assert.equal(r.callbacks.size, 0); assert.equal(r.attached.size, 0);
     mod.stop();
 });

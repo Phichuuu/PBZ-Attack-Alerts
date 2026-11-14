@@ -18,6 +18,7 @@ const overlay = new overlay_1.AlertOverlay();
 let timer;
 let world;
 let player;
+let owner;
 let component;
 let nextAcquire = 0;
 let lastTime = -1;
@@ -35,13 +36,15 @@ let probe = new diagnostics_1.CombatProbe();
 let windup = new windup_1.WindupTracker();
 let anchors = new anchors_1.BodyAnchors();
 const reported = new Set();
+let nextTickAt = 0;
+let nextLifetimeReport = 0;
 function log(message) { console.log(`${prefix} ${message}`); }
 function reset() {
     scheduler.reset();
-    overlay.destroy();
     component = undefined;
     player = undefined;
     world = undefined;
+    owner = undefined;
     lastTime = -1;
     reported.clear();
     nextAcquire = 0;
@@ -55,6 +58,7 @@ function reset() {
     probe = new diagnostics_1.CombatProbe();
     windup = new windup_1.WindupTracker();
     anchors = new anchors_1.BodyAnchors();
+    overlay.destroy();
 }
 function stop() {
     if (timer !== undefined) {
@@ -65,7 +69,7 @@ function stop() {
     log('stopped; owned overlay removed');
 }
 function forceDodge(action) {
-    if (!action || !UE.KismetSystemLibrary.IsValid(action))
+    if (!(0, overlay_1.isLive)(action))
         return false;
     let kind;
     if (UE.GameplayStatics.ObjectIsA(action, UE.LGAAction_DurationBulletWithDeflectBase.StaticClass())) {
@@ -78,25 +82,33 @@ function forceDodge(action) {
 }
 function tick() {
     const gi = puerts_1.argv.getByName('GameInstance');
-    if (!gi || !UE.KismetSystemLibrary.IsValid(gi)) {
+    if (!(0, overlay_1.isLive)(gi)) {
         reset();
         return;
     }
     const nextWorld = gi.GetWorld();
     const nextPlayer = UE.GameplayStatics.GetPlayerPawn(gi, 0);
-    if (!nextWorld || !nextPlayer || !UE.KismetSystemLibrary.IsValid(nextPlayer)) {
+    if (!(0, overlay_1.isLive)(nextWorld) || !(0, overlay_1.isLive)(nextPlayer)) {
         reset();
         return;
     }
-    if (nextWorld !== world || nextPlayer !== player) {
+    const controller = UE.GameplayStatics.GetPlayerController(gi, 0);
+    if (!(0, overlay_1.isLive)(controller)) {
+        reset();
+        return;
+    }
+    const now = UE.GameplayStatics.GetTimeSeconds(gi);
+    if (!Number.isFinite(now)) {
+        reset();
+        return;
+    }
+    if (nextWorld !== world || nextPlayer !== player || controller !== owner || now < lastTime) {
         reset();
         world = nextWorld;
         player = nextPlayer;
-        log(`world=${UE.GameplayStatics.GetCurrentLevelName(gi, true)} player=${player.GetName()}`);
+        owner = controller;
+        log(`world=${UE.GameplayStatics.GetCurrentLevelName(gi, true)} player=${player.GetName()} controller=${controller.GetName()}; lifecycle rebound`);
     }
-    const now = UE.GameplayStatics.GetTimeSeconds(gi);
-    if (now < lastTime)
-        scheduler.reset();
     lastTime = now;
     if (UE.GameplayStatics.IsGamePaused(gi)) {
         if (settings_1.settings.combatProbe)
@@ -104,17 +116,12 @@ function tick() {
         overlay.hide();
         return;
     }
-    const controller = UE.GameplayStatics.GetPlayerController(gi, 0);
-    if (!controller || !UE.KismetSystemLibrary.IsValid(controller)) {
-        overlay.hide();
-        return;
-    }
-    if (!component || !UE.KismetSystemLibrary.IsValid(component)) {
+    if (!(0, overlay_1.isLive)(component)) {
         if (now < nextAcquire)
             return;
         nextAcquire = now + 1;
         const found = player.GetComponentByClass(UE.DeflectComponent.StaticClass());
-        if (!found) {
+        if (!(0, overlay_1.isLive)(found)) {
             if (now >= nextReport) {
                 log('waiting for player DeflectComponent');
                 nextReport = now + 30;
@@ -149,11 +156,11 @@ function tick() {
                 if (!frame || frame.IsHit || !Number.isFinite(frame.HitGameTime))
                     continue;
                 let source;
-                if (frame.SourceAction && UE.KismetSystemLibrary.IsValid(frame.SourceAction))
+                if ((0, overlay_1.isLive)(frame.SourceAction))
                     source = frame.SourceAction.GetAvatarActor();
-                if ((!source || !UE.KismetSystemLibrary.IsValid(source)) && frame.Bullet && UE.KismetSystemLibrary.IsValid(frame.Bullet))
+                if (!(0, overlay_1.isLive)(source) && (0, overlay_1.isLive)(frame.Bullet))
                     source = frame.Bullet.GetOwnerAvatar();
-                if (!source || !UE.KismetSystemLibrary.IsValid(source) || UE.KismetMathLibrary.EqualEqual_ObjectObject(source, player))
+                if (!(0, overlay_1.isLive)(source) || UE.KismetMathLibrary.EqualEqual_ObjectObject(source, player))
                     continue;
                 const sourceKey = UE.KismetSystemLibrary.GetPathName(source);
                 sources.set(sourceKey, source);
@@ -174,6 +181,8 @@ function tick() {
             keys.forEach(key => reported.add(key));
         }
         catch (error) {
+            if ((0, overlay_1.isReleasedObjectError)(error))
+                throw error;
             attacks.length = 0;
             sources.clear();
             scheduler.reset();
@@ -186,6 +195,7 @@ function tick() {
     if (!overlay.valid && now >= nextUiAttempt && uiFailures < 3) {
         try {
             overlay.create(controller, settings_1.settings.maxVisible, settings_1.settings.size);
+            uiFailures = 0;
             log(`overlay attached with world owner=${controller.GetName()}`);
             if (settings_1.settings.startupCheck && !selfCheckDone) {
                 selfCheckStarted = now + settings_1.settings.startupDelaySeconds;
@@ -194,6 +204,8 @@ function tick() {
             }
         }
         catch (error) {
+            if ((0, overlay_1.isReleasedObjectError)(error))
+                throw error;
             uiFailures++;
             nextUiAttempt = now + 2;
             console.error(`${prefix} overlay attempt=${uiFailures}/3 ${String(error)}; attack diagnostics continue`);
@@ -223,7 +235,7 @@ function tick() {
         if (slot >= settings_1.settings.maxVisible)
             break;
         const source = sources.get(flash.source);
-        if (!source || !UE.KismetSystemLibrary.IsValid(source))
+        if (!(0, overlay_1.isLive)(source))
             continue;
         const { x, y } = project(source);
         occupied.add(flash.source);
@@ -234,7 +246,7 @@ function tick() {
     for (const cue of preparations) {
         if (slot >= settings_1.settings.maxVisible)
             break;
-        if (occupied.has(cue.sourceKey) || !UE.KismetSystemLibrary.IsValid(cue.source))
+        if (occupied.has(cue.sourceKey) || !(0, overlay_1.isLive)(cue.source))
             continue;
         const { x, y } = project(cue.source);
         overlay.prepare(slot++, x, y, cue.color, cue.progress);
@@ -254,12 +266,26 @@ function tick() {
             overlay.show(0, width / 2, height / 2, Math.floor(now / 2) % 2 ? 'red' : 'yellow', phase / settings_1.settings.flashSeconds);
     }
 }
-log('0.2.3-experimental loaded; higher-contrast yellow at unchanged size; yellow=parry red=dodge; coverage incomplete');
+log('0.2.4-experimental loaded; map-travel lifecycle recovery; yellow=parry red=dodge; coverage incomplete');
 timer = setInterval(() => {
+    if (Date.now() < nextTickAt)
+        return;
     try {
         tick();
     }
     catch (error) {
+        if ((0, overlay_1.isReleasedObjectError)(error)) {
+            // Loading/GC can invalidate a wrapper between a check and its use.
+            // Discard all old-world state and wait in real time (game time may
+            // pause or rewind). Keep unknown API failures fail-closed below.
+            reset();
+            nextTickAt = Date.now() + 1000;
+            if (Date.now() >= nextLifetimeReport) {
+                log('released native object during transition; waiting to reacquire world/player/controller');
+                nextLifetimeReport = Date.now() + 30000;
+            }
+            return;
+        }
         console.error(`${prefix} ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
         // Fail closed on unsupported bindings; never retry an unsafe call every frame.
         stop();

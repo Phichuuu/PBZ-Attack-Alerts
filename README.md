@@ -4,9 +4,11 @@
 
 ![黄红星芒示意](art/flare-preview.png)
 
-这是独立绘制的效果，未使用《绝区零》的原版素材或声音。当前版本 **0.2.3 试用版**，Windows / Steam 为已验证平台，依赖 [PBZModLoader](https://github.com/zoneoflkf/PBZModLoader)。
+这是独立绘制的效果，未使用《绝区零》的原版素材或声音。当前版本 **0.2.4 试用版**，Windows / Steam 为已验证平台，依赖 [PBZModLoader](https://github.com/zoneoflkf/PBZModLoader)。
 
-0.2.3 增加 Agent 部署入口和只读安装核验；保留 0.2.2 的 Windows 短路径安装修复，战斗效果与 0.2.1 相同。
+0.2.4 修复切换地图后光效永久停止：安全清理已被游戏释放的界面对象，并在世界、角色或控制器更换后重新绑定。保留 Agent 部署入口和只读安装核验；攻击提示时机、颜色和大小不变。
+
+**从旧版升级时请先保存并退出游戏。** 如果旧版已经触发此错误，其 `stop()` 也可能报错并阻止热重载，需要完整重启游戏。
 
 ## 让你的 Agent 帮你安装
 
@@ -94,7 +96,7 @@ npm run package
 - `npm run check` 严格检查 TypeScript。
 - `npm run build` 生成 `dist/`，同步仓库内的 `ready-to-install/` 和逐文件哈希清单。
 - `npm test` 构建后运行回归检查，不启动或修改游戏；安装器测试只使用临时模拟目录。
-- `npm run package` 运行检查后生成 `release/PBZ-Attack-Alerts-0.2.3-win64.zip` 和校验文件。同名包已存在时拒绝覆盖。
+- `npm run package` 运行检查后生成 `release/PBZ-Attack-Alerts-0.2.4-win64.zip` 和校验文件。同名包已存在时拒绝覆盖。
 - 自动构建配置位于 `.github/workflows/check.yml`。
 
 SDK 和加载器属于外部依赖，从官方固定来源获取，不随 Git 仓库重新分发。游戏本体不在仓库中，测试桩也不代替实际游戏。

@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.4 — 2026-11-14
+
+- Fix alerts permanently stopping during map travel when PuerTS rejects an
+  already released widget even in `IsValid`. Cleanup now releases references first
+  and cannot interrupt reset or stop.
+- Rebind the overlay and combat state when the world, pawn or controller changes,
+  or game time rewinds. Known released-object races retry after a one-second
+  real-time delay; unsupported binding errors still stop safely.
+- Add regression tests reproducing the reported cleanup failure, repeated travel,
+  controller replacement, clock rewind, delayed recovery and unknown failures.
+- Attack timing, colors and visual size are unchanged.
+
 ## 0.2.3 — 2026-11-14
 
 - Add a discoverable AGENTS.md entry point, a complete agent deployment guide,
