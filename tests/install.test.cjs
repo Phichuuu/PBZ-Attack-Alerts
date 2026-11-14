@@ -33,8 +33,9 @@ function fixture(t,{loader=true,proxy=false}={}) {
     }).map(([key,value])=>[key,Buffer.from(value)])));
     put(project,'.cache/PBZModLoader-fixture.zip',bytes);
     put(project,'dependencies.json',JSON.stringify({loader:{version:'fixture',url:'https://invalid.invalid/not-used',sha256:hash(bytes)}}));
-    const run=(...args)=>spawnSync('powershell.exe',['-NoProfile','-ExecutionPolicy','Bypass','-File',path.join(project,'scripts/install.ps1'),'-GameRoot',game,...args],{encoding:'utf8'});
-    return {project,game,put,script,run,mod:path.join(game,'ProjectPBZ/PBZModLoader/mods/pbz-attack-alerts/main.js')};
+    const runFrom=(selected,...args)=>spawnSync('powershell.exe',['-NoProfile','-ExecutionPolicy','Bypass','-File',path.join(project,'scripts/install.ps1'),'-GameRoot',selected,...args],{encoding:'utf8'});
+    const run=(...args)=>runFrom(game,...args);
+    return {project,game,put,script,run,runFrom,mod:path.join(game,'ProjectPBZ/PBZModLoader/mods/pbz-attack-alerts/main.js')};
 }
 const windows={skip:process.platform!=='win32'};
 test('installer installs to a fresh game using a verified cached loader',windows,t=>{
@@ -65,4 +66,13 @@ test('installer refuses an unknown DLL proxy without changing it',windows,t=>{
 });
 test('installer dry-run does not install files',windows,t=>{
     const f=fixture(t,{loader:false});const r=f.run('-WhatIf');assert.equal(r.status,0,r.stderr);assert.equal(fs.existsSync(f.mod),false);
+});
+test('installer accepts Windows short-name game paths without weakening containment',windows,t=>{
+    const f=fixture(t);
+    const query=spawnSync('powershell.exe',['-NoProfile','-Command',
+        '(New-Object -ComObject Scripting.FileSystemObject).GetFolder($env:PBZ_TEST_GAME_ROOT).ShortPath'],
+        {encoding:'utf8',env:{...process.env,PBZ_TEST_GAME_ROOT:f.game}});
+    assert.equal(query.status,0,query.stderr);
+    const r=f.runFrom(query.stdout.trim());assert.equal(r.status,0,r.stderr);
+    assert.equal(fs.readFileSync(f.mod,'utf8'),f.script);
 });

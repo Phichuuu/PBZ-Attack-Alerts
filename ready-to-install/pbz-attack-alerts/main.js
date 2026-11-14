@@ -254,7 +254,7 @@ function tick() {
             overlay.show(0, width / 2, height / 2, Math.floor(now / 2) % 2 ? 'red' : 'yellow', phase / settings_1.settings.flashSeconds);
     }
 }
-log('0.2.1-experimental loaded; higher-contrast yellow at unchanged size; yellow=parry red=dodge; coverage incomplete');
+log('0.2.2-experimental loaded; higher-contrast yellow at unchanged size; yellow=parry red=dodge; coverage incomplete');
 timer = setInterval(() => {
     try {
         tick();

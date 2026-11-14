@@ -9,7 +9,7 @@ function FileHash([string]$FilePath) {
 }
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 if (!$GameRoot) { $GameRoot = Read-Host 'Paste the PBZ game folder (Steam > Manage > Browse local files)' }
-$game = (Resolve-Path -LiteralPath $GameRoot.Trim('"')).Path.TrimEnd('\')
+$game = [IO.Path]::GetFullPath((Resolve-Path -LiteralPath $GameRoot.Trim('"')).ProviderPath).TrimEnd('\')
 if (!(Test-Path -LiteralPath (Join-Path $game 'platform\steam\PBZ.exe')) -or !(Test-Path -LiteralPath (Join-Path $game 'ProjectPBZ'))) {
     throw 'Choose the Steam PBZ root containing ProjectPBZ and platform\steam\PBZ.exe.'
 }

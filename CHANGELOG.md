@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.2 — 2026-11-14
+
+- Canonicalize Windows short-name game directories before the installer containment check.
+- Add an actual Windows short-path regression test. Combat behavior is unchanged.
+
 ## 0.2.1 — 2026-11-14
 
 - Improve yellow contrast using a thicker star/core, a soft dark edge and a longer

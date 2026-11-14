@@ -4,7 +4,9 @@
 
 ![黄红星芒示意](art/flare-preview.png)
 
-这是独立绘制的效果，未使用《绝区零》的原版素材或声音。当前版本 **0.2.1 试用版**，Windows / Steam 为已验证平台，依赖 [PBZModLoader](https://github.com/zoneoflkf/PBZModLoader)。
+这是独立绘制的效果，未使用《绝区零》的原版素材或声音。当前版本 **0.2.2 试用版**，Windows / Steam 为已验证平台，依赖 [PBZModLoader](https://github.com/zoneoflkf/PBZModLoader)。
+
+0.2.2 修复安装目录包含 Windows 短路径（如 `RUNNER~1`）时的识别问题，战斗效果与 0.2.1 相同。
 
 ## 拉取后直接使用
 
@@ -80,7 +82,7 @@ npm run package
 - `npm run check` 严格检查 TypeScript。
 - `npm run build` 生成 `dist/`，同步仓库内的 `ready-to-install/` 和逐文件哈希清单。
 - `npm test` 构建后运行回归检查，不启动或修改游戏；安装器测试只使用临时模拟目录。
-- `npm run package` 运行检查后生成 `release/PBZ-Attack-Alerts-0.2.1-win64.zip` 和校验文件。同名包已存在时拒绝覆盖。
+- `npm run package` 运行检查后生成 `release/PBZ-Attack-Alerts-0.2.2-win64.zip` 和校验文件。同名包已存在时拒绝覆盖。
 - 自动构建配置位于 `.github/workflows/check.yml`。
 
 SDK 和加载器属于外部依赖，从官方固定来源获取，不随 Git 仓库重新分发。游戏本体不在仓库中，测试桩也不代替实际游戏。
