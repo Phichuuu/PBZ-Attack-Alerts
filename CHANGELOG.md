@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.3 — 2026-11-14
+
+- Add a discoverable AGENTS.md entry point, a complete agent deployment guide,
+  and a copyable player prompt in the README.
+- Include a read-only file verifier with JSON output and documented exit codes,
+  keeping file verification separate from configuration and in-game verification.
+- Ship the agent guide and verifier in the player ZIP; add regression coverage
+  for missing/changed files, shadowed entries and invalid input. Combat behavior is unchanged.
+
 ## 0.2.2 — 2026-11-14
 
 - Canonicalize Windows short-name game directories before the installer containment check.

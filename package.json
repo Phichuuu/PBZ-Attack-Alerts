@@ -1,6 +1,6 @@
 {
   "name": "pbz-attack-alerts",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "private": true,
   "scripts": {
     "check": "tsc -p tsconfig.json --noEmit",

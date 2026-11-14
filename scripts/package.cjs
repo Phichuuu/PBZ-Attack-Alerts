@@ -11,7 +11,7 @@ function add(relative) {
     if(fs.statSync(p).isDirectory()) for(const f of fs.readdirSync(p)) add(relative+'/'+f);
     else files[relative]=[new Uint8Array(fs.readFileSync(p)),{mtime:new Date('2026-01-01T00:00:00Z')}];
 }
-for(const p of ['Install.cmd','scripts/install.ps1','dependencies.json','ready-to-install','README.md','LICENSE','THIRD_PARTY_NOTICES.md']) add(p);
+for(const p of ['Install.cmd','scripts/install.ps1','scripts/verify-install.ps1','AGENTS.md','docs/AGENT_DEPLOYMENT.md','dependencies.json','ready-to-install','README.md','LICENSE','THIRD_PARTY_NOTICES.md']) add(p);
 const release=path.join(root,'release'); fs.mkdirSync(release,{recursive:true});
 const name=`PBZ-Attack-Alerts-${version}-win64.zip`, output=path.join(release,name);
 const bytes=zipSync(files,{level:9});

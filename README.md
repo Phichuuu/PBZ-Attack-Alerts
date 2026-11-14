@@ -4,9 +4,21 @@
 
 ![黄红星芒示意](art/flare-preview.png)
 
-这是独立绘制的效果，未使用《绝区零》的原版素材或声音。当前版本 **0.2.2 试用版**，Windows / Steam 为已验证平台，依赖 [PBZModLoader](https://github.com/zoneoflkf/PBZModLoader)。
+这是独立绘制的效果，未使用《绝区零》的原版素材或声音。当前版本 **0.2.3 试用版**，Windows / Steam 为已验证平台，依赖 [PBZModLoader](https://github.com/zoneoflkf/PBZModLoader)。
 
-0.2.2 修复安装目录包含 Windows 短路径（如 `RUNNER~1`）时的识别问题，战斗效果与 0.2.1 相同。
+0.2.3 增加 Agent 部署入口和只读安装核验；保留 0.2.2 的 Windows 短路径安装修复，战斗效果与 0.2.1 相同。
+
+## 让你的 Agent 帮你安装
+
+把下面这段话发给能操作你电脑的 Agent 即可：
+
+> 请帮我安装 https://github.com/Phichuuu/PBZ-Attack-Alerts 。先读取仓库的
+> AGENTS.md 和 docs/AGENT_DEPLOYMENT.md，查找我的 Steam 游戏目录，使用现成文件
+> 完成预检、安装、文件核验和启用配置检查，保留其他 MOD 和已有设置的备份。
+> 最后告诉我安装结果及是否还需要进游戏验证。
+
+**Agent 从这里开始：[AGENTS.md](AGENTS.md) → [完整部署流程](docs/AGENT_DEPLOYMENT.md)。**
+安装无需编译，也无需 GitHub 账号。需要 Agent 能访问玩家的 Windows 电脑；仅能浏览网页的 Agent 无法直接安装。
 
 ## 拉取后直接使用
 
@@ -82,7 +94,7 @@ npm run package
 - `npm run check` 严格检查 TypeScript。
 - `npm run build` 生成 `dist/`，同步仓库内的 `ready-to-install/` 和逐文件哈希清单。
 - `npm test` 构建后运行回归检查，不启动或修改游戏；安装器测试只使用临时模拟目录。
-- `npm run package` 运行检查后生成 `release/PBZ-Attack-Alerts-0.2.2-win64.zip` 和校验文件。同名包已存在时拒绝覆盖。
+- `npm run package` 运行检查后生成 `release/PBZ-Attack-Alerts-0.2.3-win64.zip` 和校验文件。同名包已存在时拒绝覆盖。
 - 自动构建配置位于 `.github/workflows/check.yml`。
 
 SDK 和加载器属于外部依赖，从官方固定来源获取，不随 Git 仓库重新分发。游戏本体不在仓库中，测试桩也不代替实际游戏。
@@ -101,7 +113,9 @@ npm run build
 
 ```text
 src/                  MOD 完整 TypeScript 源码及内嵌光效
-scripts/              SDK 获取、构建打包、安装、光效生成
+AGENTS.md             其他 Agent 的部署入口
+docs/                 Agent 安装、核验、排错和回退流程
+scripts/              SDK 获取、构建打包、安装核验、光效生成
 art/                  原创光效预览
 ready-to-install/     拉取后即可安装的成品及哈希清单
 tests/                原生桥接模拟、调度、前奏与安装器测试

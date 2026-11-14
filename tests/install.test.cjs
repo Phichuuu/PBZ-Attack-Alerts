@@ -15,6 +15,7 @@ function fixture(t,{loader=true,proxy=false}={}) {
     const project=path.join(temp,'project'), game=path.join(temp,'game with spaces');
     const put=(base,p,bytes)=>{fs.mkdirSync(path.dirname(path.join(base,p)),{recursive:true});fs.writeFileSync(path.join(base,p),bytes);};
     put(project,'scripts/install.ps1',fs.readFileSync(path.join(root,'scripts/install.ps1')));
+    put(project,'scripts/verify-install.ps1',fs.readFileSync(path.join(root,'scripts/verify-install.ps1')));
     const script='// pbz-attack-alerts test fixture, never executed\n';
     put(project,'ready-to-install/pbz-attack-alerts/main.js',script);
     put(project,'ready-to-install/manifest.json',JSON.stringify({version:'test',files:{'pbz-attack-alerts/main.js':hash(script)}}));
@@ -35,7 +36,8 @@ function fixture(t,{loader=true,proxy=false}={}) {
     put(project,'dependencies.json',JSON.stringify({loader:{version:'fixture',url:'https://invalid.invalid/not-used',sha256:hash(bytes)}}));
     const runFrom=(selected,...args)=>spawnSync('powershell.exe',['-NoProfile','-ExecutionPolicy','Bypass','-File',path.join(project,'scripts/install.ps1'),'-GameRoot',selected,...args],{encoding:'utf8'});
     const run=(...args)=>runFrom(game,...args);
-    return {project,game,put,script,run,runFrom,mod:path.join(game,'ProjectPBZ/PBZModLoader/mods/pbz-attack-alerts/main.js')};
+    const verify=(...args)=>spawnSync('powershell.exe',['-NoProfile','-NonInteractive','-ExecutionPolicy','Bypass','-File',path.join(project,'scripts/verify-install.ps1'),...args],{encoding:'utf8'});
+    return {project,game,put,script,run,runFrom,verify,mod:path.join(game,'ProjectPBZ/PBZModLoader/mods/pbz-attack-alerts/main.js')};
 }
 const windows={skip:process.platform!=='win32'};
 test('installer installs to a fresh game using a verified cached loader',windows,t=>{
@@ -75,4 +77,53 @@ test('installer accepts Windows short-name game paths without weakening containm
     assert.equal(query.status,0,query.stderr);
     const r=f.runFrom(query.stdout.trim());assert.equal(r.status,0,r.stderr);
     assert.equal(fs.readFileSync(f.mod,'utf8'),f.script);
+});
+
+test('agent verification accepts installed files without claiming configuration or runtime checks',windows,t=>{
+    const f=fixture(t);const installed=f.run();assert.equal(installed.status,0,installed.stderr);
+    const r=f.verify('-GameRoot',f.game);assert.equal(r.status,0,r.stderr);
+    const report=JSON.parse(r.stdout);
+    assert.equal(report.schemaVersion,1);assert.equal(report.status,'files_verified');
+    assert.equal(report.packageVersion,'test');assert.equal(report.configurationChecked,false);
+    assert.equal(report.runtimeVerified,false);assert.deepEqual(report.issues,[]);
+    assert.equal(report.files[0].installedSha256,hash(f.script));
+});
+
+test('agent verification detects changed and missing installed files without repairing them',windows,t=>{
+    const f=fixture(t);f.put(f.game,'ProjectPBZ/PBZModLoader/mods/pbz-attack-alerts/main.js','user custom content');
+    const r=f.verify('-GameRoot',f.game);assert.equal(r.status,1);
+    const report=JSON.parse(r.stdout);assert.equal(report.status,'verification_failed');
+    assert.equal(report.files[0].packageMatches,true);assert.equal(report.files[0].installedMatches,false);
+    assert.equal(fs.readFileSync(f.mod,'utf8'),'user custom content');
+    fs.unlinkSync(f.mod);
+    const missing=f.verify('-GameRoot',f.game);assert.equal(missing.status,1);
+    assert.equal(JSON.parse(missing.stdout).files[0].installedSha256,null);
+    assert.equal(fs.existsSync(f.mod),false);
+});
+
+test('agent verification detects corrupted source even when installed files match',windows,t=>{
+    const f=fixture(t);assert.equal(f.run().status,0);
+    f.put(f.project,'ready-to-install/pbz-attack-alerts/main.js','corrupt source');
+    const r=f.verify('-GameRoot',f.game);assert.equal(r.status,1);
+    const report=JSON.parse(r.stdout);assert.equal(report.files[0].packageMatches,false);
+    assert.equal(report.files[0].installedMatches,true);
+});
+
+test('agent verification reports loader absence and overriding TypeScript',windows,t=>{
+    const f=fixture(t,{loader:false});f.put(f.game,'ProjectPBZ/PBZModLoader/mods/pbz-attack-alerts/main.js',f.script);
+    f.put(f.game,'ProjectPBZ/PBZModLoader/mods/pbz-attack-alerts/main.ts','old entry');
+    const r=f.verify('-GameRoot',f.game);assert.equal(r.status,1);
+    const report=JSON.parse(r.stdout);assert.equal(report.loaderFilesPresent,false);
+    assert.ok(report.issues.some(x=>x.includes('main.ts')));
+    assert.equal(fs.readFileSync(path.join(path.dirname(f.mod),'main.ts'),'utf8'),'old entry');
+});
+
+test('agent verification returns JSON errors for unsafe manifests and missing arguments',windows,t=>{
+    const f=fixture(t);
+    const noArgs=f.verify();assert.equal(noArgs.status,2);assert.equal(JSON.parse(noArgs.stdout).status,'error');
+    for(const files of [{}, {'pbz-attack-alerts/main.js':hash(f.script),'pbz-attack-alerts/../../outside.js':hash(f.script)}, {'pbz-attack-alerts/main.js':'not-a-hash'}]) {
+        f.put(f.project,'ready-to-install/manifest.json',JSON.stringify({version:'test',files}));
+        const r=f.verify('-GameRoot',f.game);assert.equal(r.status,2);assert.equal(JSON.parse(r.stdout).status,'error');
+    }
+    assert.equal(fs.existsSync(f.mod),false);
 });
