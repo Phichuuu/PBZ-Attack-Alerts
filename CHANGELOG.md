@@ -1,0 +1,19 @@
+# Changelog
+
+## 0.2.1 — 2026-11-14
+
+- Improve yellow contrast using a thicker star/core, a soft dark edge and a longer
+  peak-opacity phase, while preserving size and attack timing.
+- Publish complete source, ready-to-install files, a verified dependency installer,
+  reproducible build instructions and automated checks.
+
+## 0.2.0 — 2026-11-14
+
+- Replace rectangular crosses with original layered star flares.
+- Add a separate melee windup cue based on eligible, player-targeted live timelines.
+- Follow the enemy's torso bone, with an actor-centre fallback.
+
+## Earlier diagnostic versions
+
+- Establish the native incoming-frame path, world-owned overlay, sparse-map
+  iteration, hot-reload cleanup and bounded diagnostics.

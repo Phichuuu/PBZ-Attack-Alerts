@@ -1,0 +1,17 @@
+node_modules/
+dist/
+vendor/game-api/
+.cache/
+release/
+backups/
+deployment.json
+validation-*.json
+IMPLEMENTATION.md
+scripts/deploy.ps1
+*.log
+.env
+.env.*
+*.pem
+*.key
+Thumbs.db
+.DS_Store

@@ -1,0 +1,17 @@
+{
+  "version": "0.2.1",
+  "files": {
+    "pbz-attack-alerts/LICENSE": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986",
+    "pbz-attack-alerts/README-试用说明.txt": "3ee884817225289fff15e89852601f5722512053586ded718b50fc04132277cc",
+    "pbz-attack-alerts/THIRD_PARTY_NOTICES.md": "d135a27c49e4a14ec586af85425e00e3294d9aa1c1a6303a7badde079d343caf",
+    "pbz-attack-alerts/alerts.js": "75d5c85b1fcbedd1dde9671c29db47d8c99b38710a9e7793c0dcb10544881507",
+    "pbz-attack-alerts/anchors.js": "8ecf05adc8713148c19426f03097ebde2fd4dd35dce78bc2d273e681f38db1e5",
+    "pbz-attack-alerts/diagnostics.js": "927c9414ea2cb8a5e31ceec76a17b3326e0a9b11eed53fbcdba749c88f9bd34e",
+    "pbz-attack-alerts/flare-assets.js": "abb765730c3d10fb3d4955ff93ebc1afd9bc30d11aa94621be76216d46d1b355",
+    "pbz-attack-alerts/main.js": "f49ee3c4682eccf013e231c293af9a56729fc47aa4163c3ca6545dfa5a516897",
+    "pbz-attack-alerts/observations.js": "d5424bd4506bd977c4269b3c85522350ec4391dd68cb50c13b0836df89b26046",
+    "pbz-attack-alerts/overlay.js": "8ab01d2921209cce5012d35a24e91dc65bd62dc0336d5af0991e3d4183d80f82",
+    "pbz-attack-alerts/settings.js": "4affbf7c34460e6a2fc0fefd1a0dd53e672f5266de01d0246d93be37ecc9f1de",
+    "pbz-attack-alerts/windup.js": "23a2c1925cfbc3d06cedeb6152a0693cd942bc981cf0c10bdac9534cb7f02a52"
+  }
+}

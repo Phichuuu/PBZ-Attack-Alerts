@@ -1,0 +1,13 @@
+{
+  "sdk": {
+    "version": "0.3.3",
+    "url": "https://github.com/zoneoflkf/PBZModLoader/releases/download/v1.0.0/PBZModLoader-TS-Template-0.2.0-SDK-0.3.3.zip",
+    "sha256": "53ab29bd185d3d746d5b7e09d2c87167ba95e0c981ce861e6e7674171e9e5db2",
+    "prefix": "PBZModLoader-TS-Template/vendor/game-api/"
+  },
+  "loader": {
+    "version": "1.0.2",
+    "url": "https://github.com/zoneoflkf/PBZModLoader/releases/download/v1.0.2/PBZModLoader-1.0.2-win64.zip",
+    "sha256": "c87f42d220c2034c8c4d4269a5966bf957908ff6b9e25b8dbec749d3b228fc78"
+  }
+}

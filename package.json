@@ -1,0 +1,27 @@
+{
+  "name": "pbz-attack-alerts",
+  "version": "0.2.1",
+  "private": true,
+  "scripts": {
+    "check": "tsc -p tsconfig.json --noEmit",
+    "clean": "node scripts/clean.cjs",
+    "build": "npm run clean && tsc -p tsconfig.json && node scripts/bundle.cjs",
+    "postinstall": "node scripts/prepare-sdk.cjs",
+    "sdk": "node scripts/prepare-sdk.cjs",
+    "test": "npm run build && node --test tests/*.test.cjs",
+    "package": "npm test && node scripts/package.cjs"
+  },
+  "devDependencies": {
+    "fflate": "0.8.3",
+    "typescript": "7.0.2"
+  },
+  "description": "Yellow/red attack warning stars for Phantom Blade Zero",
+  "license": "GPL-3.0-only",
+  "engines": {
+    "node": ">=22"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Phichuuu/PBZ-Attack-Alerts.git"
+  }
+}
